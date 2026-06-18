@@ -1,0 +1,328 @@
+###############################################################
+## Hjorth Distribution
+###############################################################
+
+dhjorth <- function(x, alpha, lambda)
+{
+  (alpha + lambda*x*(1+x)) *
+    (1+x)^(-(alpha+1)) *
+    exp(-lambda*x^2/2)
+}
+
+shjorth <- function(x, alpha, lambda)
+{
+  (1+x)^(-alpha) *
+    exp(-lambda*x^2/2)
+}
+
+phjorth <- function(x, alpha, lambda)
+{
+  1 - shjorth(x, alpha, lambda)
+}
+
+###############################################################
+## Random Generator
+###############################################################
+
+rhjorth <- function(n, alpha, lambda)
+{
+  u <- runif(n)
+  
+  x <- numeric(n)
+  
+  for(i in 1:n)
+  {
+    x[i] <- uniroot(
+      function(z)
+        phjorth(z,alpha,lambda)-u[i],
+      c(0,100)
+    )$root
+  }
+  
+  x
+}
+
+###############################################################
+
+loglik <- function(par,x)
+{
+  
+  alpha<-par[1]
+  lambda<-par[2]
+  
+  if(alpha<=0 | lambda<=0)
+    return(-1e20)
+  
+  sum(log(alpha+lambda*x*(1+x))) -
+    (alpha+1)*sum(log(1+x)) -
+    lambda*sum(x^2)/2
+  
+}
+
+###############################################################
+
+MLE <- function(x)
+{
+  
+  fit<-optim(c(1,1),
+             
+             fn=function(par)
+               -loglik(par,x),
+             
+             method="L-BFGS-B",
+             
+             lower=c(0.0001,0.0001))
+  
+  fit$par
+  
+}
+
+###############################################################
+
+logpost<-function(par,x)
+{
+  
+  alpha<-par[1]
+  lambda<-par[2]
+  
+  if(alpha<=0 | lambda<=0)
+    return(-1e20)
+  
+  lp<-loglik(par,x)
+  
+  lp<-lp+
+    dgamma(alpha,0.001,0.001,log=TRUE)+
+    dgamma(lambda,0.001,0.001,log=TRUE)
+  
+  lp
+  
+}
+
+###############################################################
+
+MH<-function(x,
+             iter=5000,
+             burn=500)
+{
+  
+  chain<-matrix(0,iter,2)
+  
+  chain[1,]<-c(1,1)
+  
+  accept<-0
+  
+  for(i in 2:iter)
+  {
+    
+    current<-chain[i-1,]
+    
+    proposal<-exp(log(current)+
+                    rnorm(2,0,0.08))
+    
+    logr<-
+      logpost(proposal,x)-
+      logpost(current,x)
+    
+    if(log(runif(1))<logr)
+    {
+      chain[i,]<-proposal
+      accept<-accept+1
+    }
+    
+    else
+      chain[i,]<-current
+    
+  }
+  
+  post<-chain[(burn+1):iter,]
+  
+  list(est=colMeans(post),
+       chain=post,
+       acc=accept/(iter-1))
+  
+}
+
+###############################################################
+
+Rsk<-function(alphaX,
+              lambdaX,
+              alphaY,
+              lambdaY,
+              s=1,
+              k=3)
+{
+  
+  integrand<-function(y)
+  {
+    
+    SX<-shjorth(y,
+                alphaX,
+                lambdaX)
+    
+    FX<-1-SX
+    
+    fy<-dhjorth(y,
+                alphaY,
+                lambdaY)
+    
+    p<-0
+    
+    for(j in s:k)
+    {
+      p<-p+
+        choose(k,j)*
+        SX^j*
+        FX^(k-j)
+    }
+    
+    p*fy
+    
+  }
+  
+  integrate(integrand,
+            0,
+            Inf)$value
+  
+}
+
+###############################################################
+
+set.seed(123)
+
+NREP<-5000
+
+n<-30
+
+alphaX.true<-0.75
+lambdaX.true<-0.50
+
+alphaY.true<-0.75
+lambdaY.true<-1.50
+
+###############################################################
+
+MLE.est<-matrix(0,NREP,4)
+
+Bayes.est<-matrix(0,NREP,4)
+
+MLE.R<-numeric(NREP)
+
+Bayes.R<-numeric(NREP)
+
+###############################################################
+
+for(rep in 1:NREP)
+{
+  
+  X<-rhjorth(n,
+             alphaX.true,
+             lambdaX.true)
+  
+  Y<-rhjorth(n,
+             alphaY.true,
+             lambdaY.true)
+  
+  #########################
+  ## MLE
+  #########################
+  
+  fitX<-MLE(X)
+  
+  fitY<-MLE(Y)
+  
+  MLE.est[rep,]<-
+    c(fitX,fitY)
+  
+  MLE.R[rep]<-
+    Rsk(fitX[1],
+        fitX[2],
+        fitY[1],
+        fitY[2])
+  
+  #########################
+  ## Bayesian
+  #########################
+  
+  BX<-MH(X)
+  
+  BY<-MH(Y)
+  
+  Bayes.est[rep,]<-
+    c(BX$est,
+      BY$est)
+  
+  Bayes.R[rep]<-
+    Rsk(BX$est[1],
+        BX$est[2],
+        BY$est[1],
+        BY$est[2])
+  
+  #print(rep)
+  
+}
+
+###############################################################
+
+True.R<-
+  Rsk(alphaX.true,
+      lambdaX.true,
+      alphaY.true,
+      lambdaY.true)
+
+True.R
+
+###############################################################
+
+Performance<-function(est,true)
+{
+  
+  Bias<-mean(est)-true
+  
+  RB<-Bias/true
+  
+  MSE<-mean((est-true)^2)
+  
+  c(Mean=mean(est),
+    Bias=Bias,
+    RB=RB,
+    MSE=MSE)
+  
+}
+
+###############################################################
+
+Result<-rbind(
+  
+  MLE_alphaX=
+    Performance(MLE.est[,1],alphaX.true),
+  
+  MLE_lambdaX=
+    Performance(MLE.est[,2],lambdaX.true),
+  
+  MLE_alphaY=
+    Performance(MLE.est[,3],alphaY.true),
+  
+  MLE_lambdaY=
+    Performance(MLE.est[,4],lambdaY.true),
+  
+  Bayes_alphaX=
+    Performance(Bayes.est[,1],alphaX.true),
+  
+  Bayes_lambdaX=
+    Performance(Bayes.est[,2],lambdaX.true),
+  
+  Bayes_alphaY=
+    Performance(Bayes.est[,3],alphaY.true),
+  
+  Bayes_lambdaY=
+    Performance(Bayes.est[,4],lambdaY.true),
+  
+  MLE_R=
+    Performance(MLE.R,True.R),
+  
+  Bayes_R=
+    Performance(Bayes.R,True.R)
+  
+)
+
+round(Result,5)
