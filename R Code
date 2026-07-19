@@ -1,0 +1,191 @@
+
+dhjorth <- function(x, alpha, lambda)
+{
+  (alpha + lambda*x*(1+x)) *
+    (1+x)^(-(alpha+1)) *
+    exp(-lambda*x^2/2)
+}
+
+shjorth <- function(x, alpha, lambda)
+{
+  (1+x)^(-alpha) *
+    exp(-lambda*x^2/2)
+}
+
+phjorth <- function(x, alpha, lambda)
+{
+  1 - shjorth(x, alpha, lambda)
+}
+
+
+rhjorth <- function(n, alpha, lambda)
+{
+  u <- runif(n)
+  
+  x <- numeric(n)
+  
+  for(i in 1:n)
+  {
+    x[i] <- uniroot(
+      function(z)
+        phjorth(z,alpha,lambda)-u[i],
+      c(0,100)
+    )$root
+  }
+  
+  x
+}
+
+
+loglik <- function(par,x)
+{
+  
+  alpha<-par[1]
+  lambda<-par[2]
+  
+  if(alpha<=0 | lambda<=0)
+    return(-1e20)
+  
+  sum(log(alpha+lambda*x*(1+x))) -
+    (alpha+1)*sum(log(1+x)) -
+    lambda*sum(x^2)/2
+  
+}
+
+
+MLE <- function(x)
+{
+  
+  fit<-optim(c(1,1),
+             
+             fn=function(par)
+               -loglik(par,x),
+             
+             method="L-BFGS-B",
+             
+             lower=c(0.0001,0.0001))
+  
+  fit$par
+  
+}
+
+
+Rsk<-function(alphaX,
+              lambdaX,
+              alphaY,
+              lambdaY,
+              s=1,
+              k=3)
+{
+  
+  integrand<-function(y)
+  {
+    
+    SX<-shjorth(y,
+                alphaX,
+                lambdaX)
+    
+    FX<-1-SX
+    
+    fy<-dhjorth(y,
+                alphaY,
+                lambdaY)
+    
+    p<-0
+    
+    for(j in s:k)
+    {
+      p<-p+
+        choose(k,j)*
+        SX^j*
+        FX^(k-j)
+    }
+    
+    p*fy
+    
+  }
+  
+  integrate(integrand,
+            0,
+            Inf)$value
+  
+}
+
+
+set.seed(123)
+
+NREP<-10000
+
+n<-60
+
+alphaX.true<-0.75
+lambdaX.true<-1.50
+
+alphaY.true<-0.75
+lambdaY.true<-0.50
+
+
+MLE.est<-matrix(0,NREP,4)
+
+
+MLE.R<-numeric(NREP)
+
+
+
+for(rep in 1:NREP)
+{
+  
+  X<-rhjorth(n,
+             alphaX.true,
+             lambdaX.true)
+  
+  Y<-rhjorth(n,
+             alphaY.true,
+             lambdaY.true)
+
+  
+  fitX<-MLE(X)
+  
+  fitY<-MLE(Y)
+  
+  MLE.est[rep,]<-
+    c(fitX,fitY)
+  
+  MLE.R[rep]<-
+    Rsk(fitX[1],
+        fitX[2],
+        fitY[1],
+        fitY[2])
+  
+  
+}
+
+
+True.R<-
+  Rsk(alphaX.true,
+      lambdaX.true,
+      alphaY.true,
+      lambdaY.true)
+
+True.R
+
+
+Performance<-function(est,true)
+{
+  
+  Bias<-mean(abs(est-true))
+  
+  
+  MSE<-mean((est-true)^2)
+  
+  c(Bias=Bias,
+    MSE=MSE)
+  
+}
+
+
+Result<-rbind(
+  MLE_R=Performance(MLE.R,True.R)
+)
+
+round(Result,5)
