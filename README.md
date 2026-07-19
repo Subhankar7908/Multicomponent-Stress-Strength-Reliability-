@@ -1,1 +1,1 @@
-Implemented a comprehensive R simulation framework for estimating multicomponent stress–strength reliability using the Hjorth lifetime distribution under both Maximum Likelihood Estimation (MLE) and Bayesian estimation.
+Implemented a comprehensive R simulation framework for estimating multicomponent stress–strength reliability using the Hjorth lifetime distribution under both Maximum Likelihood Estimation (MLE).
